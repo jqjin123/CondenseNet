@@ -48,6 +48,7 @@ class _Transition(nn.Module):
         return x
 
 
+# 测试时使用的模型，带index索引层
 class CondenseNet(nn.Module):
     def __init__(self, args):
 

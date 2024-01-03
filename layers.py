@@ -44,13 +44,13 @@ class LearnedGroupConv(nn.Module):
         if self.dropout_rate > 0:
             x = self.drop(x)
         ### Masked output
-        weight = self.conv.weight * self.mask
+        weight = self.conv.weight * self.mask  # weight -> OxRx1x1
         return F.conv2d(x, weight, None, self.conv.stride,
                         self.conv.padding, self.conv.dilation, 1)
 
     def _check_drop(self):
         progress = LearnedGroupConv.global_progress
-        delta = 0
+        delta = 0  # 每个阶段需要剪枝的通道数
         ### Get current stage
         for i in range(self.condense_factor - 1):
             if progress * 2 < (i + 1) / (self.condense_factor - 1):
@@ -67,7 +67,7 @@ class LearnedGroupConv(nn.Module):
         return
 
     def _dropping(self, delta):
-        weight = self.conv.weight * self.mask
+        weight = self.conv.weight * self.mask  # 先计算出之前阶段剪枝好的卷积权重
         ### Sum up all kernels
         ### Assume only apply to 1x1 conv to speed up
         assert weight.size()[-1] == 1
@@ -85,11 +85,12 @@ class LearnedGroupConv(nn.Module):
             ### Take corresponding delta index
             di = wi.sum(0).sort()[1][self.count:self.count + delta]
             for d in di.data:
-                self._mask[i::self.groups, d, :, :].fill_(0)
+                # 将_mask对应的通道（列）权重置为0，这里的_mask对应shuffle和squeeze操作前的维度排列
+                self._mask[i::self.groups, d, :, :].fill_(0)  # Shuffle本质上就是按groups间隔取的通道
         self.count = self.count + delta
 
     @property
-    def count(self):
+    def count(self): # 已剪枝的数量
         return int(self._count[0])
 
     @count.setter
@@ -147,7 +148,7 @@ class CondensingLinear(nn.Module):
         self.linear = nn.Linear(self.in_features, self.out_features)
         self.register_buffer('index', torch.LongTensor(self.in_features))
         _, index = model.weight.data.abs().sum(0).sort()
-        index = index[model.in_features-self.in_features:]
+        index = index[model.in_features-self.in_features:]  # 去除需要删除的输入特征
         self.linear.bias.data = model.bias.data.clone()
         for i in range(self.in_features):
             self.index[i] = index[i]
@@ -159,11 +160,12 @@ class CondensingLinear(nn.Module):
         return x
 
 
-class CondensingConv(nn.Module):
+# 压缩卷积：Condensing Conv. （用于测试阶段）
+class CondensingConv(nn.Module):  # 将可学习分组卷积替换为一般的分组卷积，减少计算量和参数量
     def __init__(self, model):
         super(CondensingConv, self).__init__()
         self.in_channels = model.conv.in_channels \
-                         * model.groups // model.condense_factor
+                         * model.groups // model.condense_factor  # 剪枝后还剩这么多输入通道
         self.out_channels = model.conv.out_channels
         self.groups = model.groups
         self.condense_factor = model.condense_factor
@@ -199,6 +201,7 @@ class CondensingConv(nn.Module):
         x = self.norm(x)
         x = self.relu(x)
         x = self.conv(x)
+        # 对比训练阶段LGC的输出格式可知（仅在输出通道剪枝时保持在同一组），差一个shuffle操作
         x = ShuffleLayer(x, self.groups)
         return x
 

@@ -52,6 +52,7 @@ class _Transition(nn.Module):
         return x
 
 
+# 以下未实现FDC的功能，即不同block的块也加跳连
 class CondenseNet(nn.Module):
     def __init__(self, args):
 
